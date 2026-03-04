@@ -18,6 +18,7 @@
       showToast,
       openModal,
       closeModal,
+      getAccountId,
     } from './app.js';
 
     async function loadEsignTable() {
@@ -149,11 +150,12 @@
         showToast('Select a document to sign.', 'error');
         return;
       }
+      const acctId = await getAccountId();
       await exec(`
         INSERT INTO E_SIGN_RECORD
           (account_id, document_id, aadhaar_verified, signature_hash, signing_authority, certificate_url, is_valid)
-        VALUES (1, ?, 1, 'demo_signature_hash', ?, 'https://esign.gov.in/demo-cert', 1)
-      `, [documentId, authority]);
+        VALUES (?, ?, 1, 'demo_signature_hash', ?, 'https://esign.gov.in/demo-cert', 1)
+      `, [acctId, documentId, authority]);
       showToast('Document e-signed (demo).', 'success');
       closeModal('esign-sign-modal');
       form.reset();

@@ -18,7 +18,10 @@
       showToast,
       openModal,
       closeModal,
+      getAccountId,
     } from './app.js';
+
+    let acctId = 1;
 
     let currentIssuedType = 'ALL';
     let currentUploadedSearch = '';
@@ -182,12 +185,12 @@
         showToast('File name and type are required.', 'error');
         return;
       }
-      const storagePath = `/user/1/uploads/${name}`;
+      const storagePath = `/user/${acctId}/uploads/${name}`;
       await exec(`
         INSERT INTO UPLOADED_DOCUMENT
           (account_id, file_name, file_type, file_size_kb, description, sha256_checksum, storage_path)
-        VALUES (1, ?, ?, ?, ?, 'demo_checksum', ?)
-      `, [name, type, Number.isFinite(size) ? size : 0, desc, storagePath]);
+        VALUES (?, ?, ?, ?, ?, 'demo_checksum', ?)
+      `, [acctId, name, type, Number.isFinite(size) ? size : 0, desc, storagePath]);
       showToast('Uploaded document added (demo).', 'success');
       closeModal('upload-modal');
       form.reset();
@@ -196,6 +199,7 @@
 
     onReady(async () => {
       initSidebar();
+      acctId = await getAccountId();
 
       document.getElementById('tab-issued').addEventListener('click', () => {
         document.getElementById('tab-issued').classList.add('active');

@@ -35,6 +35,25 @@ async function apiJson(path, options = {}) {
   return data;
 }
 
+// Cached current user info
+let _currentUser = null;
+
+export async function getCurrentUser() {
+  if (_currentUser) return _currentUser;
+  try {
+    const data = await apiJson('/api/me');
+    _currentUser = data.user || null;
+    return _currentUser;
+  } catch {
+    return null;
+  }
+}
+
+export async function getAccountId() {
+  const user = await getCurrentUser();
+  return user ? user.accountId : 1;
+}
+
 // Simple query and exec wrappers via backend (MySQL)
 export async function query(sql, params = []) {
   const data = await apiJson('/api/sql/query', {

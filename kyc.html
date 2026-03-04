@@ -18,16 +18,19 @@
       showToast,
       openModal,
       closeModal,
+      getAccountId,
     } from './app.js';
+
+    let acctId = 1;
 
     async function loadKycBanner() {
       const latest = (await query(`
         SELECT *
         FROM KYC_VERIFICATION
-        WHERE account_id = 1
+        WHERE account_id = ?
         ORDER BY COALESCE(verified_at, '9999-12-31') DESC, kyc_id DESC
         LIMIT 1
-      `))[0];
+      `, [acctId]))[0];
 
       const banner = document.getElementById('kyc-banner');
       if (!latest) {
@@ -56,9 +59,9 @@
       const rows = await query(`
         SELECT *
         FROM KYC_VERIFICATION
-        WHERE account_id = 1
+        WHERE account_id = ?
         ORDER BY COALESCE(verified_at, '9999-12-31') DESC, kyc_id DESC
-      `);
+      `, [acctId]);
 
       renderTable('kyc-table', [
         { key: 'kyc_id', label: 'ID' },
@@ -145,8 +148,8 @@
       await exec(`
         INSERT INTO KYC_VERIFICATION
           (citizen_id, account_id, kyc_method, kyc_status, verified_at, verified_by, uidai_response_code, kyc_score, next_review_date, remarks)
-        VALUES (1, 1, ?, 'Pending', NULL, NULL, NULL, NULL, NULL, ?)
-      `, [method, remarks]);
+        VALUES (?, ?, ?, 'Pending', NULL, NULL, NULL, NULL, NULL, ?)
+      `, [acctId, acctId, method, remarks]);
       showToast('New KYC submission recorded (demo).', 'success');
       form.reset();
       await loadKycTable();
@@ -177,6 +180,7 @@
 
     onReady(async () => {
       initSidebar();
+      acctId = await getAccountId();
 
       document.querySelectorAll('[data-open-modal]').forEach(btn => {
         btn.addEventListener('click', () => openModal(btn.getAttribute('data-open-modal')));

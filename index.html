@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>Secure Identity System — Login</title>
+  <meta name="description" content="Unified digital locker for Aadhaar-linked identities, documents, KYC and consent management." />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="css/style.css" />
   <script type="module" src="db.js"></script>
@@ -55,9 +56,9 @@
     });
   </script>
 </head>
-<body>
-  <div class="layout" style="justify-content:center;align-items:center;padding:32px;">
-    <main class="main" style="max-width:960px;">
+<body class="login-page">
+  <div class="layout layout-centered">
+    <main class="main login-main">
       <div class="hero">
         <div class="hero-copy">
           <div class="hero-kicker">Government Identity Stack</div>
@@ -71,16 +72,16 @@
           </div>
         </div>
 
-        <div class="shield-graphic">
+        <div class="shield-graphic" aria-hidden="true">
           <div class="shield-ring"></div>
           <div class="shield-orbit"></div>
           <div class="shield-core">
             <svg viewBox="0 0 64 64" aria-hidden="true">
-              <path d="M32 4L14 10v18c0 6.6 3.9 12.9 7.8 17.4C25.8 50.6 32 56 32 56s6.2-5.4 10.2-10.6C46.1 40.9 50 34.6 50 28V10L32 4z" fill="#0F172A"/>
-              <path d="M32 8l-14 5v15.1c0 5.4 3.3 10.7 6.7 14.5 3 3.4 6.1 6 7.3 7.1 1.2-1.1 4.3-3.7 7.3-7.1 3.4-3.8 6.7-9.1 6.7-14.5V13L32 8z" fill="#1D4ED8"/>
-              <path d="M26 29.5v-6.2C26 19.9 28.7 17 32 17s6 2.9 6 6.3v6.2" fill="none" stroke="#BFDBFE" stroke-width="2.4" stroke-linecap="round"/>
-              <rect x="24" y="28" width="16" height="12" rx="2.5" fill="#EFF6FF" stroke="#1E3A8A" stroke-width="1.6"/>
-              <path d="M28 32h8" stroke="#1D4ED8" stroke-width="1.6" stroke-linecap="round"/>
+              <path d="M32 4L14 10v18c0 6.6 3.9 12.9 7.8 17.4C25.8 50.6 32 56 32 56s6.2-5.4 10.2-10.6C46.1 40.9 50 34.6 50 28V10L32 4z" fill="rgba(255,255,255,0.15)"/>
+              <path d="M32 8l-14 5v15.1c0 5.4 3.3 10.7 6.7 14.5 3 3.4 6.1 6 7.3 7.1 1.2-1.1 4.3-3.7 7.3-7.1 3.4-3.8 6.7-9.1 6.7-14.5V13L32 8z" fill="rgba(255,255,255,0.25)"/>
+              <path d="M26 29.5v-6.2C26 19.9 28.7 17 32 17s6 2.9 6 6.3v6.2" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round"/>
+              <rect x="24" y="28" width="16" height="12" rx="2.5" fill="#FFFFFF" stroke="rgba(255,255,255,0.5)" stroke-width="1.6"/>
+              <path d="M28 32h8" stroke="rgba(79,70,229,0.8)" stroke-width="1.6" stroke-linecap="round"/>
             </svg>
           </div>
           <div class="shield-badge">
@@ -102,8 +103,9 @@
               <label for="password">Password</label>
               <input id="password" name="password" type="password" placeholder="Enter password" required />
             </div>
-            <button class="btn" type="submit">
+            <button class="btn" type="submit" style="width:100%;justify-content:center;">
               <span>Sign in to Dashboard</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             </button>
           </form>
 
@@ -112,7 +114,7 @@
           <div class="otp-option">
             <div>
               <div><strong>Aadhaar-linked OTP</strong></div>
-              <div style="font-size:11px;color:#9CA3AF;">Mock e-KYC gateway for demo</div>
+              <div style="font-size:11px;color:var(--color-muted);margin-top:2px;">Mock e-KYC gateway for demo</div>
             </div>
             <button class="btn btn-xs btn-secondary" id="aadhaar-otp-btn">Use Aadhaar OTP</button>
           </div>
@@ -122,4 +124,3 @@
   </div>
 </body>
 </html>
-

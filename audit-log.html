@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Secure Identity System — Authentication Log</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="module" src="db.js"></script>
+  <script type="module">
+    import {
+      onReady,
+      initSidebar,
+      query,
+      renderTable,
+      badge,
+    } from './app.js';
+
+    let methodFilter = 'ALL';
+
+    async function loadLog() {
+      const method = methodFilter === 'ALL' ? '%' : methodFilter;
+      const rows = await query(`
+        SELECT auth_id,
+               auth_method,
+               auth_timestamp,
+               ip_address,
+               device_info,
+               location,
+               auth_status,
+               failure_reason
+        FROM AUTHENTICATION_LOG
+        WHERE auth_method LIKE ?
+        ORDER BY auth_timestamp DESC
+      `, [method]);
+
+      const container = document.getElementById('auth-timeline');
+      container.innerHTML = '';
+      rows.forEach(r => {
+        const item = document.createElement('li');
+        item.className = 'timeline-item';
+        let statusClass = 'badge-default';
+        if (r.auth_status === 'Success') statusClass = 'badge-success';
+        else if (r.auth_status === 'Failed') statusClass = 'badge-danger';
+        else if (r.auth_status === 'Blocked') statusClass = 'badge-warning';
+        item.innerHTML = `
+          <div class="timeline-bullet"></div>
+          <div class="timeline-title">${r.auth_method} from ${r.ip_address}</div>
+          <div class="timeline-meta">
+            ${r.auth_timestamp} · ${r.device_info} · ${r.location}
+            <span class="badge ${statusClass}" style="margin-left:6px;">${r.auth_status}</span>
+          </div>
+          ${r.failure_reason ? `<div style="font-size:11px;color:#FCA5A5;margin-top:2px;">Failure: ${r.failure_reason}</div>` : ''}
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    async function loadAggregate() {
+      const perAccount = await query(`
+        SELECT account_id,
+               COUNT(*) AS failed_attempts
+        FROM AUTHENTICATION_LOG
+        WHERE auth_status IN ('Failed','Blocked')
+        GROUP BY account_id
+        ORDER BY failed_attempts DESC
+      `);
+
+      renderTable('auth-aggregate-table', [
+        { key: 'account_id', label: 'Account ID' },
+        { key: 'failed_attempts', label: 'Failed / Blocked Attempts' },
+      ], perAccount);
+    }
+
+    onReady(async () => {
+      initSidebar();
+
+      document.getElementById('method-filter').addEventListener('change', (e) => {
+        methodFilter = e.target.value;
+        loadLog();
+      });
+
+      await loadLog();
+      await loadAggregate();
+    });
+  </script>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2L5 4.5v6.75c0 4.3 3 8.35 7 9.75 4-1.4 7-5.45 7-9.75V4.5L12 2z" fill="#1D4ED8"/>
+            <path d="M9 11.5V9a3 3 0 0 1 6 0v2.5" fill="none" stroke="#EFF6FF" stroke-width="1.5" stroke-linecap="round"/>
+            <rect x="8" y="11" width="8" height="5" rx="1.5" fill="#EFF6FF"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-text-title">Secure Identity</div>
+          <div class="brand-text-subtitle">Citizen Trust Portal</div>
+        </div>
+      </div>
+
+      <div class="sidebar-section-label">Citizen</div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html"><span class="icon">🏠</span>Dashboard</a>
+        <a href="documents.html"><span class="icon">📄</span>Documents</a>
+        <a href="kyc.html"><span class="icon">🪪</span>KYC Verification</a>
+        <a href="access-requests.html"><span class="icon">🔑</span>Access Requests</a>
+        <a href="esign.html"><span class="icon">✍️</span>e-Sign Records</a>
+        <a href="notifications.html"><span class="icon">🔔</span>Notifications</a>
+        <a href="audit-log.html"><span class="icon">🛡️</span>Authentication Log</a>
+      </nav>
+
+      <div class="sidebar-section-label">Administration</div>
+      <nav class="sidebar-nav">
+        <a href="admin.html"><span class="icon">🏛️</span>Admin Panel</a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div><strong>Demo Mode</strong> · MySQL Database</div>
+        <div>Node/Express · MySQL</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="page-header">
+        <div>
+          <h1 class="page-title">Authentication Log</h1>
+          <div class="page-subtitle">
+            Timeline of password and OTP logins with aggregate statistics on failed attempts per account.
+          </div>
+        </div>
+        <div class="page-header-actions">
+          <div class="filters-inline">
+            <label for="method-filter">Auth Method</label>
+            <select id="method-filter">
+              <option value="ALL">All</option>
+              <option value="Password">Password</option>
+              <option value="OTP">OTP</option>
+            </select>
+          </div>
+        </div>
+      </header>
+
+      <section class="panel" style="margin-bottom:16px;">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Timeline</h2>
+            <div class="panel-subtitle">Backed by AUTHENTICATION_LOG with filters</div>
+          </div>
+        </div>
+        <ul id="auth-timeline" class="timeline"></ul>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Failed Attempts per Account</h2>
+            <div class="panel-subtitle">Group by account_id and count failed or blocked events</div>
+          </div>
+        </div>
+        <div id="auth-aggregate-table"></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
+

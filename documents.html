@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Secure Identity System — Documents</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="module" src="db.js"></script>
+  <script type="module">
+    import {
+      onReady,
+      initSidebar,
+      query,
+      exec,
+      renderTable,
+      badge,
+      showToast,
+      openModal,
+      closeModal,
+    } from './app.js';
+
+    let currentIssuedType = 'ALL';
+    let currentUploadedSearch = '';
+
+    async function loadIssued() {
+      const filter = currentIssuedType === 'ALL' ? '%' : currentIssuedType;
+      const rows = await query(`
+        SELECT d.document_id,
+               d.document_name,
+               d.document_type,
+               i.issuer_name,
+               d.issue_date,
+               d.is_valid
+        FROM ISSUED_DOCUMENT d
+        JOIN ISSUER_ORGANIZATION i ON d.issuer_id = i.issuer_id
+        WHERE d.document_type LIKE ?
+        ORDER BY d.issue_date DESC
+      `, [filter]);
+
+      renderTable('issued-table', [
+        { key: 'document_name', label: 'Name' },
+        { key: 'document_type', label: 'Type' },
+        { key: 'issuer_name', label: 'Issuer' },
+        { key: 'issue_date', label: 'Issue Date' },
+        {
+          key: 'is_valid',
+          label: 'Status',
+          format: (v) => badge(v ? 'Valid' : 'Invalid'),
+        },
+      ], rows, {
+        rowActions: [
+          {
+            id: 'view-issued',
+            label: 'View',
+            rowIdKey: 'document_id',
+            onClick: (row) => openIssuedDetails(row),
+          },
+        ],
+      });
+    }
+
+    async function loadUploaded() {
+      const term = `%${currentUploadedSearch}%`;
+      const rows = await query(`
+        SELECT upload_id,
+               file_name,
+               file_type,
+               file_size_kb,
+               upload_timestamp,
+               is_verified
+        FROM UPLOADED_DOCUMENT
+        WHERE file_name LIKE ?
+        ORDER BY upload_timestamp DESC
+      `, [term]);
+
+      renderTable('uploaded-table', [
+        { key: 'file_name', label: 'File Name' },
+        { key: 'file_type', label: 'Type' },
+        {
+          key: 'file_size_kb',
+          label: 'Size (KB)',
+          format: (v) => (v ? v.toFixed(0) : ''),
+        },
+        { key: 'upload_timestamp', label: 'Uploaded At' },
+        {
+          key: 'is_verified',
+          label: 'Status',
+          format: (v) => badge(v ? 'Verified' : 'Pending'),
+        },
+      ], rows, {
+        rowActions: [
+          {
+            id: 'view-upload',
+            label: 'View',
+            rowIdKey: 'upload_id',
+            onClick: (row) => openUploadedDetails(row),
+          },
+          {
+            id: 'delete-upload',
+            label: 'Delete',
+            rowIdKey: 'upload_id',
+            onClick: (row) => deleteUploaded(row.upload_id),
+          },
+        ],
+      });
+    }
+
+    function openIssuedDetails(row) {
+      const modalBody = document.getElementById('issued-details-body');
+      modalBody.innerHTML = `
+        <div class="form-grid">
+          <div class="form-field">
+            <label>Document Name</label>
+            <div>${row.document_name}</div>
+          </div>
+          <div class="form-field">
+            <label>Type</label>
+            <div>${row.document_type}</div>
+          </div>
+          <div class="form-field">
+            <label>Issuer</label>
+            <div>${row.issuer_name}</div>
+          </div>
+          <div class="form-field">
+            <label>Issue Date</label>
+            <div>${row.issue_date}</div>
+          </div>
+          <div class="form-field">
+            <label>Status</label>
+            <div>${badge(row.is_valid ? 'Valid' : 'Invalid')}</div>
+          </div>
+        </div>
+      `;
+      openModal('issued-details-modal');
+    }
+
+    function openUploadedDetails(row) {
+      const modalBody = document.getElementById('uploaded-details-body');
+      modalBody.innerHTML = `
+        <div class="form-grid">
+          <div class="form-field">
+            <label>File Name</label>
+            <div>${row.file_name}</div>
+          </div>
+          <div class="form-field">
+            <label>Type</label>
+            <div>${row.file_type}</div>
+          </div>
+          <div class="form-field">
+            <label>Size (KB)</label>
+            <div>${row.file_size_kb}</div>
+          </div>
+          <div class="form-field">
+            <label>Uploaded At</label>
+            <div>${row.upload_timestamp}</div>
+          </div>
+          <div class="form-field">
+            <label>Status</label>
+            <div>${badge(row.is_verified ? 'Verified' : 'Pending')}</div>
+          </div>
+        </div>
+      `;
+      openModal('uploaded-details-modal');
+    }
+
+    async function deleteUploaded(uploadId) {
+      if (!confirm('Delete this uploaded document from your locker?')) return;
+      await exec(`DELETE FROM UPLOADED_DOCUMENT WHERE upload_id = ?`, [uploadId]);
+      showToast('Document deleted.', 'success');
+      await loadUploaded();
+    }
+
+    async function handleUploadSubmit(e) {
+      e.preventDefault();
+      const form = e.target;
+      const name = form.file_name.value.trim();
+      const type = form.file_type.value.trim();
+      const size = parseFloat(form.file_size_kb.value || '0');
+      const desc = form.description.value.trim();
+      if (!name || !type) {
+        showToast('File name and type are required.', 'error');
+        return;
+      }
+      const storagePath = `/user/1/uploads/${name}`;
+      await exec(`
+        INSERT INTO UPLOADED_DOCUMENT
+          (account_id, file_name, file_type, file_size_kb, description, sha256_checksum, storage_path)
+        VALUES (1, ?, ?, ?, ?, 'demo_checksum', ?)
+      `, [name, type, Number.isFinite(size) ? size : 0, desc, storagePath]);
+      showToast('Uploaded document added (demo).', 'success');
+      closeModal('upload-modal');
+      form.reset();
+      await loadUploaded();
+    }
+
+    onReady(async () => {
+      initSidebar();
+
+      document.getElementById('tab-issued').addEventListener('click', () => {
+        document.getElementById('tab-issued').classList.add('active');
+        document.getElementById('tab-uploaded').classList.remove('active');
+        document.getElementById('issued-section').style.display = 'block';
+        document.getElementById('uploaded-section').style.display = 'none';
+      });
+
+      document.getElementById('tab-uploaded').addEventListener('click', () => {
+        document.getElementById('tab-uploaded').classList.add('active');
+        document.getElementById('tab-issued').classList.remove('active');
+        document.getElementById('issued-section').style.display = 'none';
+        document.getElementById('uploaded-section').style.display = 'block';
+      });
+
+      document.getElementById('issued-type-filter').addEventListener('change', (e) => {
+        currentIssuedType = e.target.value;
+        loadIssued();
+      });
+
+      document.getElementById('uploaded-search').addEventListener('input', (e) => {
+        currentUploadedSearch = e.target.value;
+        loadUploaded();
+      });
+
+      document.getElementById('open-upload-modal').addEventListener('click', () => {
+        openModal('upload-modal');
+      });
+
+      document.getElementById('upload-form').addEventListener('submit', handleUploadSubmit);
+
+      document.querySelectorAll('[data-close-modal]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          closeModal(btn.getAttribute('data-close-modal'));
+        });
+      });
+
+      await loadIssued();
+      await loadUploaded();
+    });
+  </script>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2L5 4.5v6.75c0 4.3 3 8.35 7 9.75 4-1.4 7-5.45 7-9.75V4.5L12 2z" fill="#1D4ED8"/>
+            <path d="M9 11.5V9a3 3 0 0 1 6 0v2.5" fill="none" stroke="#EFF6FF" stroke-width="1.5" stroke-linecap="round"/>
+            <rect x="8" y="11" width="8" height="5" rx="1.5" fill="#EFF6FF"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-text-title">Secure Identity</div>
+          <div class="brand-text-subtitle">Citizen Trust Portal</div>
+        </div>
+      </div>
+
+      <div class="sidebar-section-label">Citizen</div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html"><span class="icon">🏠</span>Dashboard</a>
+        <a href="documents.html"><span class="icon">📄</span>Documents</a>
+        <a href="kyc.html"><span class="icon">🪪</span>KYC Verification</a>
+        <a href="access-requests.html"><span class="icon">🔑</span>Access Requests</a>
+        <a href="esign.html"><span class="icon">✍️</span>e-Sign Records</a>
+        <a href="notifications.html"><span class="icon">🔔</span>Notifications</a>
+        <a href="audit-log.html"><span class="icon">🛡️</span>Authentication Log</a>
+      </nav>
+
+      <div class="sidebar-section-label">Administration</div>
+      <nav class="sidebar-nav">
+        <a href="admin.html"><span class="icon">🏛️</span>Admin Panel</a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div><strong>Demo Mode</strong> · MySQL Database</div>
+        <div>Node/Express · MySQL</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="page-header">
+        <div>
+          <h1 class="page-title">Document Management</h1>
+          <div class="page-subtitle">
+            Issued documents from trusted issuers and citizen-uploaded proofs backed by live SQL queries.
+          </div>
+        </div>
+        <div class="page-header-actions">
+          <div class="tabs">
+            <button id="tab-issued" class="tab active" type="button">Issued Documents</button>
+            <button id="tab-uploaded" class="tab" type="button">Uploaded Documents</button>
+          </div>
+        </div>
+      </header>
+
+      <section id="issued-section" class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Issued Documents</h2>
+            <div class="panel-subtitle">All documents pulled from registered issuer organizations</div>
+          </div>
+          <div class="filters-inline">
+            <label for="issued-type-filter">Type</label>
+            <select id="issued-type-filter">
+              <option value="ALL">All</option>
+              <option value="Marksheet">Marksheet</option>
+              <option value="Driving Licence">Driving Licence</option>
+              <option value="Degree">Degree</option>
+              <option value="Identity">Identity</option>
+              <option value="Passport">Passport</option>
+            </select>
+          </div>
+        </div>
+        <div id="issued-table"></div>
+      </section>
+
+      <section id="uploaded-section" class="panel" style="display:none;margin-top:16px;">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Uploaded Documents</h2>
+            <div class="panel-subtitle">Citizen-managed proofs stored in your locker</div>
+          </div>
+          <div class="filter-bar">
+            <input id="uploaded-search" class="input" type="text" placeholder="Search by file name (LIKE query)" />
+            <button id="open-upload-modal" class="btn btn-secondary" type="button">Add Uploaded Document</button>
+          </div>
+        </div>
+        <div id="uploaded-table"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Issued details modal -->
+  <div class="modal" id="issued-details-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title">Issued Document Details</div>
+        <button class="btn btn-xs btn-secondary" type="button" data-close-modal="issued-details-modal">Close</button>
+      </div>
+      <div class="modal-body" id="issued-details-body"></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-xs" type="button" data-close-modal="issued-details-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Uploaded details modal -->
+  <div class="modal" id="uploaded-details-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title">Uploaded Document Details</div>
+        <button class="btn btn-xs btn-secondary" type="button" data-close-modal="uploaded-details-modal">Close</button>
+      </div>
+      <div class="modal-body" id="uploaded-details-body"></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-xs" type="button" data-close-modal="uploaded-details-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Upload new document modal -->
+  <div class="modal" id="upload-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title">Add Uploaded Document</div>
+        <button class="btn btn-xs btn-secondary" type="button" data-close-modal="upload-modal">Close</button>
+      </div>
+      <div class="modal-body">
+        <form id="upload-form" class="form-grid">
+          <div class="form-field">
+            <label for="file_name">File Name</label>
+            <input id="file_name" name="file_name" type="text" required />
+          </div>
+          <div class="form-field">
+            <label for="file_type">File Type</label>
+            <input id="file_type" name="file_type" type="text" placeholder="e.g. PDF, Image" required />
+          </div>
+          <div class="form-field">
+            <label for="file_size_kb">File Size (KB)</label>
+            <input id="file_size_kb" name="file_size_kb" type="number" min="0" step="1" />
+          </div>
+          <div class="form-field" style="grid-column: span 2;">
+            <label for="description">Description</label>
+            <textarea id="description" name="description" rows="3"></textarea>
+          </div>
+          <div class="form-field" style="grid-column: span 2;align-items:flex-end;">
+            <button class="btn" type="submit">Save to Locker</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+

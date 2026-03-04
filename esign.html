@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Secure Identity System — e-Sign Records</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="module" src="db.js"></script>
+  <script type="module">
+    import {
+      onReady,
+      initSidebar,
+      query,
+      exec,
+      renderTable,
+      badge,
+      showToast,
+      openModal,
+      closeModal,
+    } from './app.js';
+
+    async function loadEsignTable() {
+      const rows = await query(`
+        SELECT e.esign_id,
+               d.document_name,
+               e.signed_at,
+               e.aadhaar_verified,
+               e.is_valid,
+               e.revoked_at,
+               e.certificate_url,
+               e.signature_hash,
+               e.signing_authority
+        FROM E_SIGN_RECORD e
+        JOIN ISSUED_DOCUMENT d ON e.document_id = d.document_id
+        ORDER BY e.signed_at DESC
+      `);
+
+      renderTable('esign-table', [
+        { key: 'document_name', label: 'Document' },
+        { key: 'signed_at', label: 'Signed At' },
+        {
+          key: 'aadhaar_verified',
+          label: 'Aadhaar',
+          format: (v) => badge(v ? 'Verified' : 'Not Linked'),
+        },
+        {
+          key: 'is_valid',
+          label: 'Status',
+          format: (v, row) => row.revoked_at ? badge('Revoked') : badge('Active'),
+        },
+      ], rows, {
+        rowActions: [
+          {
+            id: 'view',
+            label: 'Certificate',
+            rowIdKey: 'esign_id',
+            onClick: (row) => openDetails(row),
+          },
+          {
+            id: 'revoke',
+            label: 'Revoke',
+            rowIdKey: 'esign_id',
+            onClick: (row) => revokeEsign(row),
+          },
+        ],
+      });
+    }
+
+    async function loadUnsignedDocuments() {
+      const docs = await query(`
+        SELECT d.document_id, d.document_name
+        FROM ISSUED_DOCUMENT d
+        WHERE NOT EXISTS (
+          SELECT 1 FROM E_SIGN_RECORD e
+          WHERE e.document_id = d.document_id
+        )
+        ORDER BY d.document_name
+      `);
+      const select = document.getElementById('esign_document_id');
+      select.innerHTML = '<option value="">Select issued document</option>';
+      docs.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.document_id;
+        opt.textContent = d.document_name;
+        select.appendChild(opt);
+      });
+    }
+
+    function openDetails(row) {
+      const body = document.getElementById('esign-details-body');
+      body.innerHTML = `
+        <div class="form-grid">
+          <div class="form-field" style="grid-column: span 2;">
+            <label>Document</label>
+            <div>${row.document_name}</div>
+          </div>
+          <div class="form-field">
+            <label>Signed At</label>
+            <div>${row.signed_at}</div>
+          </div>
+          <div class="form-field">
+            <label>Status</label>
+            <div>${row.revoked_at ? badge('Revoked') : badge('Active')}</div>
+          </div>
+          <div class="form-field">
+            <label>Aadhaar Verified</label>
+            <div>${badge(row.aadhaar_verified ? 'Yes' : 'No')}</div>
+          </div>
+          <div class="form-field">
+            <label>Signing Authority</label>
+            <div>${row.signing_authority || '-'}</div>
+          </div>
+          <div class="form-field" style="grid-column: span 2;">
+            <label>Certificate URL</label>
+            <div>${row.certificate_url || '-'}</div>
+          </div>
+          <div class="form-field" style="grid-column: span 2;">
+            <label>Signature Hash</label>
+            <div style="word-break:break-all;">${row.signature_hash || '-'}</div>
+          </div>
+        </div>
+      `;
+      openModal('esign-details-modal');
+    }
+
+    async function revokeEsign(row) {
+      if (!row.is_valid || row.revoked_at) {
+        showToast('Signature is already revoked or invalid.', 'error');
+        return;
+      }
+      if (!confirm('Revoke this e-signature?')) return;
+      await exec(`
+        UPDATE E_SIGN_RECORD
+        SET is_valid = 0,
+            revoked_at = CURRENT_TIMESTAMP
+        WHERE esign_id = ?
+      `, [row.esign_id]);
+      showToast('e-Signature revoked.', 'success');
+      await loadEsignTable();
+    }
+
+    async function handleSignSubmit(e) {
+      e.preventDefault();
+      const form = e.target;
+      const documentId = parseInt(form.esign_document_id.value, 10);
+      const authority = form.signing_authority.value.trim() || 'Citizen Self-Sign';
+      if (!documentId) {
+        showToast('Select a document to sign.', 'error');
+        return;
+      }
+      await exec(`
+        INSERT INTO E_SIGN_RECORD
+          (account_id, document_id, aadhaar_verified, signature_hash, signing_authority, certificate_url, is_valid)
+        VALUES (1, ?, 1, 'demo_signature_hash', ?, 'https://esign.gov.in/demo-cert', 1)
+      `, [documentId, authority]);
+      showToast('Document e-signed (demo).', 'success');
+      closeModal('esign-sign-modal');
+      form.reset();
+      await loadEsignTable();
+      await loadUnsignedDocuments();
+    }
+
+    onReady(async () => {
+      initSidebar();
+
+      document.querySelectorAll('[data-open-modal]').forEach(btn => {
+        btn.addEventListener('click', () => openModal(btn.getAttribute('data-open-modal')));
+      });
+      document.querySelectorAll('[data-close-modal]').forEach(btn => {
+        btn.addEventListener('click', () => closeModal(btn.getAttribute('data-close-modal')));
+      });
+
+      document.getElementById('esign-sign-form').addEventListener('submit', handleSignSubmit);
+
+      await loadEsignTable();
+      await loadUnsignedDocuments();
+    });
+  </script>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2L5 4.5v6.75c0 4.3 3 8.35 7 9.75 4-1.4 7-5.45 7-9.75V4.5L12 2z" fill="#1D4ED8"/>
+            <path d="M9 11.5V9a3 3 0 0 1 6 0v2.5" fill="none" stroke="#EFF6FF" stroke-width="1.5" stroke-linecap="round"/>
+            <rect x="8" y="11" width="8" height="5" rx="1.5" fill="#EFF6FF"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-text-title">Secure Identity</div>
+          <div class="brand-text-subtitle">Citizen Trust Portal</div>
+        </div>
+      </div>
+
+      <div class="sidebar-section-label">Citizen</div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html"><span class="icon">🏠</span>Dashboard</a>
+        <a href="documents.html"><span class="icon">📄</span>Documents</a>
+        <a href="kyc.html"><span class="icon">🪪</span>KYC Verification</a>
+        <a href="access-requests.html"><span class="icon">🔑</span>Access Requests</a>
+        <a href="esign.html"><span class="icon">✍️</span>e-Sign Records</a>
+        <a href="notifications.html"><span class="icon">🔔</span>Notifications</a>
+        <a href="audit-log.html"><span class="icon">🛡️</span>Authentication Log</a>
+      </nav>
+
+      <div class="sidebar-section-label">Administration</div>
+      <nav class="sidebar-nav">
+        <a href="admin.html"><span class="icon">🏛️</span>Admin Panel</a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div><strong>Demo Mode</strong> · MySQL Database</div>
+        <div>Node/Express · MySQL</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="page-header">
+        <div>
+          <h1 class="page-title">e-Sign Records</h1>
+          <div class="page-subtitle">
+            Aadhaar-verified e-signatures on your trusted documents with revocation and certificate details.
+          </div>
+        </div>
+        <div class="page-header-actions">
+          <button class="btn btn-secondary" type="button" data-open-modal="esign-sign-modal">Sign a Document</button>
+        </div>
+      </header>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Signed Documents</h2>
+            <div class="panel-subtitle">Backed by E_SIGN_RECORD and ISSUED_DOCUMENT tables</div>
+          </div>
+        </div>
+        <div id="esign-table"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- e-Sign details modal -->
+  <div class="modal" id="esign-details-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title">e-Sign Certificate</div>
+        <button class="btn btn-xs btn-secondary" type="button" data-close-modal="esign-details-modal">Close</button>
+      </div>
+      <div class="modal-body" id="esign-details-body"></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-xs" type="button" data-close-modal="esign-details-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- e-Sign new document modal -->
+  <div class="modal" id="esign-sign-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title">Sign a Document</div>
+        <button class="btn btn-xs btn-secondary" type="button" data-close-modal="esign-sign-modal">Close</button>
+      </div>
+      <div class="modal-body">
+        <form id="esign-sign-form" class="form-grid">
+          <div class="form-field" style="grid-column: span 2;">
+            <label for="esign_document_id">Issued Document</label>
+            <select id="esign_document_id" name="esign_document_id" required></select>
+          </div>
+          <div class="form-field" style="grid-column: span 2;">
+            <label for="signing_authority">Signing Authority</label>
+            <input id="signing_authority" name="signing_authority" type="text" placeholder="e.g. Arjun Sharma" />
+          </div>
+          <div class="form-field" style="grid-column: span 2;text-align:right;">
+            <button class="btn" type="submit">Create e-Sign</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+

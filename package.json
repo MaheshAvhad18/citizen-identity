@@ -1,0 +1,19 @@
+{
+  "name": "secure-identity-system-mysql",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Secure Identity Verification portal (MySQL-backed) - DBMS project demo",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "init-db": "node server/scripts/init-db.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-session": "^1.17.3",
+    "mysql2": "^3.11.5"
+  }
+}
+

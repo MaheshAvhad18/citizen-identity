@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Secure Identity System — Notifications</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="module" src="db.js"></script>
+  <script type="module">
+    import {
+      onReady,
+      initSidebar,
+      query,
+      exec,
+      showToast,
+    } from './app.js';
+
+    let channelFilter = 'ALL';
+
+    async function loadNotifications() {
+      const filter = channelFilter === 'ALL' ? '%' : channelFilter;
+      const rows = await query(`
+        SELECT notification_id,
+               event_type,
+               channel,
+               message_body,
+               sent_at,
+               delivery_status,
+               retry_count,
+               is_read
+        FROM NOTIFICATION
+        WHERE channel LIKE ?
+        ORDER BY sent_at DESC
+      `, [filter]);
+
+      const list = document.getElementById('notification-list');
+      list.innerHTML = '';
+      rows.forEach(row => {
+        const item = document.createElement('div');
+        item.className = 'notification-item' + (row.is_read ? '' : ' unread');
+        item.innerHTML = `
+          <div class="notification-main">
+            <div class="notification-title">${row.event_type}</div>
+            <div class="notification-meta">
+              ${row.channel} · ${row.sent_at} · ${row.delivery_status}${row.retry_count ? ' · retries: ' + row.retry_count : ''}
+            </div>
+            <div style="font-size:12px;margin-top:2px;">${row.message_body}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            ${row.is_read ? '' : '<div class="notification-badge">●</div>'}
+            <button class="btn btn-xs btn-secondary" data-action="mark" data-id="${row.notification_id}">${row.is_read ? 'Read' : 'Mark read'}</button>
+            <button class="btn btn-xs btn-secondary" data-action="delete" data-id="${row.notification_id}">Delete</button>
+          </div>
+        `;
+        list.appendChild(item);
+      });
+
+      list.querySelectorAll('button[data-action="mark"]').forEach(btn => {
+        btn.addEventListener('click', () => markRead(parseInt(btn.getAttribute('data-id'), 10)));
+      });
+      list.querySelectorAll('button[data-action="delete"]').forEach(btn => {
+        btn.addEventListener('click', () => deleteNotification(parseInt(btn.getAttribute('data-id'), 10)));
+      });
+    }
+
+    async function markRead(id) {
+      await exec(`
+        UPDATE NOTIFICATION
+        SET is_read = 1
+        WHERE notification_id = ?
+      `, [id]);
+      showToast('Notification marked as read.', 'success');
+      await loadNotifications();
+    }
+
+    async function deleteNotification(id) {
+      if (!confirm('Delete this notification from your inbox?')) return;
+      await exec(`DELETE FROM NOTIFICATION WHERE notification_id = ?`, [id]);
+      showToast('Notification deleted.', 'success');
+      await loadNotifications();
+    }
+
+    onReady(async () => {
+      initSidebar();
+
+      document.getElementById('channel-filter').addEventListener('change', (e) => {
+        channelFilter = e.target.value;
+        loadNotifications();
+      });
+
+      await loadNotifications();
+    });
+  </script>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2L5 4.5v6.75c0 4.3 3 8.35 7 9.75 4-1.4 7-5.45 7-9.75V4.5L12 2z" fill="#1D4ED8"/>
+            <path d="M9 11.5V9a3 3 0 0 1 6 0v2.5" fill="none" stroke="#EFF6FF" stroke-width="1.5" stroke-linecap="round"/>
+            <rect x="8" y="11" width="8" height="5" rx="1.5" fill="#EFF6FF"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-text-title">Secure Identity</div>
+          <div class="brand-text-subtitle">Citizen Trust Portal</div>
+        </div>
+      </div>
+
+      <div class="sidebar-section-label">Citizen</div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html"><span class="icon">🏠</span>Dashboard</a>
+        <a href="documents.html"><span class="icon">📄</span>Documents</a>
+        <a href="kyc.html"><span class="icon">🪪</span>KYC Verification</a>
+        <a href="access-requests.html"><span class="icon">🔑</span>Access Requests</a>
+        <a href="esign.html"><span class="icon">✍️</span>e-Sign Records</a>
+        <a href="notifications.html"><span class="icon">🔔</span>Notifications</a>
+        <a href="audit-log.html"><span class="icon">🛡️</span>Authentication Log</a>
+      </nav>
+
+      <div class="sidebar-section-label">Administration</div>
+      <nav class="sidebar-nav">
+        <a href="admin.html"><span class="icon">🏛️</span>Admin Panel</a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div><strong>Demo Mode</strong> · MySQL Database</div>
+        <div>Node/Express · MySQL</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="page-header">
+        <div>
+          <h1 class="page-title">Notifications Center</h1>
+          <div class="page-subtitle">
+            Security alerts, consent prompts and activity updates across SMS, Email and Push channels.
+          </div>
+        </div>
+        <div class="page-header-actions">
+          <div class="filters-inline">
+            <label for="channel-filter">Channel</label>
+            <select id="channel-filter">
+              <option value="ALL">All</option>
+              <option value="SMS">SMS</option>
+              <option value="Email">Email</option>
+              <option value="Push">Push</option>
+            </select>
+          </div>
+        </div>
+      </header>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Inbox</h2>
+            <div class="panel-subtitle">Backed by NOTIFICATION with live UPDATE and DELETE actions</div>
+          </div>
+        </div>
+        <div id="notification-list" class="notification-list"></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
+

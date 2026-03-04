@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Secure Identity System — Admin Panel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="module" src="db.js"></script>
+  <script type="module">
+    import {
+      onReady,
+      initSidebar,
+      query,
+      exec,
+      renderTable,
+      badge,
+      showToast,
+      openModal,
+      closeModal,
+    } from './app.js';
+
+    async function loadIssuers() {
+      const rows = await query(`
+        SELECT issuer_id,
+               issuer_name,
+               issuer_code,
+               issuer_type,
+               state,
+               is_active,
+               registered_date
+        FROM ISSUER_ORGANIZATION
+        ORDER BY issuer_name
+      `);
+
+      renderTable('issuer-table', [
+        { key: 'issuer_name', label: 'Issuer' },
+        { key: 'issuer_code', label: 'Code' },
+        { key: 'issuer_type', label: 'Type' },
+        { key: 'state', label: 'State' },
+        {
+          key: 'is_active',
+          label: 'Status',
+          format: (v) => badge(v ? 'Active' : 'Inactive'),
+        },
+      ], rows);
+    }
+
+    async function loadRequesters() {
+      const rows = await query(`
+        SELECT requester_id,
+               org_name,
+               org_type,
+               registration_number,
+               contact_email,
+               is_approved,
+               approved_date
+        FROM REQUESTER_ORGANIZATION
+        ORDER BY org_name
+      `);
+
+      renderTable('requester-table', [
+        { key: 'org_name', label: 'Organization' },
+        { key: 'org_type', label: 'Type' },
+        { key: 'registration_number', label: 'Reg No.' },
+        { key: 'contact_email', label: 'Email' },
+        {
+          key: 'is_approved',
+          label: 'Approval',
+          format: (v) => badge(v ? 'Approved' : 'Pending'),
+        },
+        { key: 'approved_date', label: 'Approved Date' },
+      ], rows, {
+        rowActions: [
+          {
+            id: 'approve',
+            label: 'Approve',
+            rowIdKey: 'requester_id',
+            onClick: (row) => approveRequester(row.requester_id),
+          },
+        ],
+      });
+    }
+
+    async function loadShareLogs() {
+      const rows = await query(`
+        SELECT s.share_id,
+               d.document_name,
+               r.org_name,
+               s.share_timestamp,
+               s.share_method,
+               s.share_expiry,
+               s.is_revoked,
+               s.access_count
+        FROM DOCUMENT_SHARE_LOG s
+        JOIN ISSUED_DOCUMENT d ON s.document_id = d.document_id
+        JOIN REQUESTER_ORGANIZATION r ON s.requester_id = r.requester_id
+        ORDER BY s.share_timestamp DESC
+      `);
+
+      renderTable('share-table', [
+        { key: 'document_name', label: 'Document' },
+        { key: 'org_name', label: 'Requester' },
+        { key: 'share_method', label: 'Method' },
+        { key: 'share_timestamp', label: 'Shared At' },
+        { key: 'share_expiry', label: 'Expiry' },
+        {
+          key: 'is_revoked',
+          label: 'Status',
+          format: (v) => badge(v ? 'Revoked' : 'Active'),
+        },
+        { key: 'access_count', label: 'Access Count' },
+      ], rows);
+    }
+
+    async function approveRequester(id) {
+      await exec(`
+        UPDATE REQUESTER_ORGANIZATION
+        SET is_approved = 1,
+            approved_date = CURDATE()
+        WHERE requester_id = ?
+      `, [id]);
+      showToast('Requester organization approved.', 'success');
+      await loadRequesters();
+    }
+
+    async function handleNewOrg(e) {
+      e.preventDefault();
+      const form = e.target;
+      const name = form.org_name.value.trim();
+      const type = form.org_type.value.trim();
+      const reg = form.registration_number.value.trim();
+      const email = form.contact_email.value.trim();
+      const website = form.website_url.value.trim();
+      if (!name || !type) {
+        showToast('Name and type are required.', 'error');
+        return;
+      }
+      await exec(`
+        INSERT INTO REQUESTER_ORGANIZATION
+          (org_name, org_type, registration_number, contact_email, api_key_hash, is_approved, website_url)
+        VALUES (?, ?, ?, ?, 'demo_api_key', 0, ?)
+      `, [name, type, reg, email, website]);
+      showToast('Requester organization created (demo).', 'success');
+      form.reset();
+      closeModal('new-org-modal');
+      await loadRequesters();
+    }
+
+    async function resetDatabase() {
+      if (!confirm('Reset demo database to seed state? This clears all runtime changes.')) return;
+      await fetch('/api/admin/reset', { method: 'POST' });
+      window.location.reload();
+    }
+
+    onReady(async () => {
+      initSidebar();
+
+      document.querySelectorAll('[data-open-modal]').forEach(btn => {
+        btn.addEventListener('click', () => openModal(btn.getAttribute('data-open-modal')));
+      });
+      document.querySelectorAll('[data-close-modal]').forEach(btn => {
+        btn.addEventListener('click', () => closeModal(btn.getAttribute('data-close-modal')));
+      });
+
+      document.getElementById('new-org-form').addEventListener('submit', handleNewOrg);
+      document.getElementById('reset-db-btn').addEventListener('click', resetDatabase);
+
+      await loadIssuers();
+      await loadRequesters();
+      await loadShareLogs();
+    });
+  </script>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2L5 4.5v6.75c0 4.3 3 8.35 7 9.75 4-1.4 7-5.45 7-9.75V4.5L12 2z" fill="#1D4ED8"/>
+            <path d="M9 11.5V9a3 3 0 0 1 6 0v2.5" fill="none" stroke="#EFF6FF" stroke-width="1.5" stroke-linecap="round"/>
+            <rect x="8" y="11" width="8" height="5" rx="1.5" fill="#EFF6FF"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-text-title">Secure Identity</div>
+          <div class="brand-text-subtitle">Citizen Trust Portal</div>
+        </div>
+      </div>
+
+      <div class="sidebar-section-label">Citizen</div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html"><span class="icon">🏠</span>Dashboard</a>
+        <a href="documents.html"><span class="icon">📄</span>Documents</a>
+        <a href="kyc.html"><span class="icon">🪪</span>KYC Verification</a>
+        <a href="access-requests.html"><span class="icon">🔑</span>Access Requests</a>
+        <a href="esign.html"><span class="icon">✍️</span>e-Sign Records</a>
+        <a href="notifications.html"><span class="icon">🔔</span>Notifications</a>
+        <a href="audit-log.html"><span class="icon">🛡️</span>Authentication Log</a>
+      </nav>
+
+      <div class="sidebar-section-label">Administration</div>
+      <nav class="sidebar-nav">
+        <a href="admin.html"><span class="icon">🏛️</span>Admin Panel</a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div><strong>Demo Mode</strong> · MySQL Database</div>
+        <div>Node/Express · MySQL</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="page-header">
+        <div>
+          <h1 class="page-title">Admin Panel</h1>
+          <div class="page-subtitle">
+            Manage issuer and requester organizations and inspect document share logs (JOIN queries).
+          </div>
+        </div>
+        <div class="page-header-actions">
+          <button class="btn btn-secondary" type="button" data-open-modal="new-org-modal">Add Requester Org</button>
+          <button class="btn btn-secondary" type="button" id="reset-db-btn">Reset Demo DB</button>
+        </div>
+      </header>
+
+      <section class="content-grid">
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">Issuer Organizations</h2>
+              <div class="panel-subtitle">Entities that can issue trusted documents</div>
+            </div>
+          </div>
+          <div id="issuer-table"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">Requester Organizations</h2>
+              <div class="panel-subtitle">Banks, employers and agencies requesting citizen data</div>
+            </div>
+          </div>
+          <div id="requester-table"></div>
+        </section>
+      </section>
+
+      <section class="panel" style="margin-top:16px;">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Document Share Log</h2>
+            <div class="panel-subtitle">Audit of document access via DOCUMENT_SHARE_LOG with JOINs</div>
+          </div>
+        </div>
+        <div id="share-table"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- New requester org modal -->
+  <div class="modal" id="new-org-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title">Add Requester Organization</div>
+        <button class="btn btn-xs btn-secondary" type="button" data-close-modal="new-org-modal">Close</button>
+      </div>
+      <div class="modal-body">
+        <form id="new-org-form" class="form-grid">
+          <div class="form-field" style="grid-column: span 2;">
+            <label for="org_name">Organization Name</label>
+            <input id="org_name" name="org_name" type="text" required />
+          </div>
+          <div class="form-field">
+            <label for="org_type">Type</label>
+            <input id="org_type" name="org_type" type="text" placeholder="Bank, Employer, FinTech, Govt" required />
+          </div>
+          <div class="form-field">
+            <label for="registration_number">Registration Number</label>
+            <input id="registration_number" name="registration_number" type="text" />
+          </div>
+          <div class="form-field">
+            <label for="contact_email">Contact Email</label>
+            <input id="contact_email" name="contact_email" type="email" />
+          </div>
+          <div class="form-field">
+            <label for="website_url">Website URL</label>
+            <input id="website_url" name="website_url" type="url" />
+          </div>
+          <div class="form-field" style="grid-column: span 2;text-align:right;">
+            <button class="btn" type="submit">Create Organization</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+

@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Secure Identity System — Access Requests</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="module" src="db.js"></script>
+  <script type="module">
+    import {
+      onReady,
+      initSidebar,
+      query,
+      exec,
+      renderTable,
+      badge,
+      showToast,
+    } from './app.js';
+
+    let statusFilter = 'ALL';
+
+    async function loadPending() {
+      const rows = await query(`
+        SELECT a.access_request_id,
+               r.org_name,
+               d.document_name,
+               a.purpose,
+               a.request_timestamp,
+               a.expiry_timestamp,
+               a.consent_status
+        FROM ACCESS_REQUEST a
+        JOIN REQUESTER_ORGANIZATION r ON a.requester_id = r.requester_id
+        JOIN ISSUED_DOCUMENT d ON a.document_id = d.document_id
+        WHERE a.consent_status = 'Pending'
+        ORDER BY a.request_timestamp DESC
+      `);
+
+      renderTable('pending-table', [
+        { key: 'org_name', label: 'Requester' },
+        { key: 'document_name', label: 'Document' },
+        { key: 'purpose', label: 'Purpose' },
+        { key: 'request_timestamp', label: 'Requested At' },
+        { key: 'expiry_timestamp', label: 'Expires At' },
+      ], rows, {
+        rowActions: [
+          {
+            id: 'approve',
+            label: 'Approve',
+            rowIdKey: 'access_request_id',
+            onClick: (row) => updateConsent(row.access_request_id, 'Approved'),
+          },
+          {
+            id: 'reject',
+            label: 'Reject',
+            rowIdKey: 'access_request_id',
+            onClick: (row) => updateConsent(row.access_request_id, 'Rejected'),
+          },
+        ],
+      });
+    }
+
+    async function loadHistory() {
+      const filter = statusFilter === 'ALL' ? '%' : statusFilter;
+      const rows = await query(`
+        SELECT a.access_request_id,
+               r.org_name,
+               d.document_name,
+               a.purpose,
+               a.request_timestamp,
+               a.expiry_timestamp,
+               a.consent_status,
+               a.citizen_response_at
+        FROM ACCESS_REQUEST a
+        JOIN REQUESTER_ORGANIZATION r ON a.requester_id = r.requester_id
+        JOIN ISSUED_DOCUMENT d ON a.document_id = d.document_id
+        WHERE a.consent_status LIKE ?
+        ORDER BY a.request_timestamp DESC
+      `, [filter]);
+
+      renderTable('history-table', [
+        { key: 'org_name', label: 'Requester' },
+        { key: 'document_name', label: 'Document' },
+        { key: 'purpose', label: 'Purpose' },
+        { key: 'request_timestamp', label: 'Requested At' },
+        { key: 'citizen_response_at', label: 'Responded At' },
+        {
+          key: 'consent_status',
+          label: 'Status',
+          format: (v) => badge(v),
+        },
+      ], rows);
+    }
+
+    async function updateConsent(id, status) {
+      await exec(`
+        UPDATE ACCESS_REQUEST
+        SET consent_status = ?,
+            citizen_response_at = CURRENT_TIMESTAMP
+        WHERE access_request_id = ?
+      `, [status, id]);
+      showToast(`Request ${status.toLowerCase()}.`, 'success');
+      await loadPending();
+      await loadHistory();
+    }
+
+    onReady(async () => {
+      initSidebar();
+
+      document.getElementById('status-filter').addEventListener('change', (e) => {
+        statusFilter = e.target.value;
+        loadHistory();
+      });
+
+      await loadPending();
+      await loadHistory();
+    });
+  </script>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2L5 4.5v6.75c0 4.3 3 8.35 7 9.75 4-1.4 7-5.45 7-9.75V4.5L12 2z" fill="#1D4ED8"/>
+            <path d="M9 11.5V9a3 3 0 0 1 6 0v2.5" fill="none" stroke="#EFF6FF" stroke-width="1.5" stroke-linecap="round"/>
+            <rect x="8" y="11" width="8" height="5" rx="1.5" fill="#EFF6FF"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-text-title">Secure Identity</div>
+          <div class="brand-text-subtitle">Citizen Trust Portal</div>
+        </div>
+      </div>
+
+      <div class="sidebar-section-label">Citizen</div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html"><span class="icon">🏠</span>Dashboard</a>
+        <a href="documents.html"><span class="icon">📄</span>Documents</a>
+        <a href="kyc.html"><span class="icon">🪪</span>KYC Verification</a>
+        <a href="access-requests.html"><span class="icon">🔑</span>Access Requests</a>
+        <a href="esign.html"><span class="icon">✍️</span>e-Sign Records</a>
+        <a href="notifications.html"><span class="icon">🔔</span>Notifications</a>
+        <a href="audit-log.html"><span class="icon">🛡️</span>Authentication Log</a>
+      </nav>
+
+      <div class="sidebar-section-label">Administration</div>
+      <nav class="sidebar-nav">
+        <a href="admin.html"><span class="icon">🏛️</span>Admin Panel</a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div><strong>Demo Mode</strong> · MySQL Database</div>
+        <div>Node/Express · MySQL</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="page-header">
+        <div>
+          <h1 class="page-title">Access Requests & Consent</h1>
+          <div class="page-subtitle">
+            View who is requesting your documents, approve or reject them, and inspect consent history (JOIN queries).
+          </div>
+        </div>
+      </header>
+
+      <section class="panel" style="margin-bottom:16px;">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Pending Requests</h2>
+            <div class="panel-subtitle">Organizations awaiting your consent</div>
+          </div>
+          <div class="filters-inline">
+            <span class="badge-pill">Powered by ACCESS_REQUEST + REQUESTER_ORGANIZATION + ISSUED_DOCUMENT</span>
+          </div>
+        </div>
+        <div id="pending-table"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Consent History</h2>
+            <div class="panel-subtitle">Approved, rejected and expired access over time</div>
+          </div>
+          <div class="filters-inline">
+            <label for="status-filter">Status</label>
+            <select id="status-filter">
+              <option value="ALL">All</option>
+              <option value="Approved">Approved</option>
+              <option value="Rejected">Rejected</option>
+              <option value="Expired">Expired</option>
+              <option value="Pending">Pending</option>
+            </select>
+          </div>
+        </div>
+        <div id="history-table"></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
+

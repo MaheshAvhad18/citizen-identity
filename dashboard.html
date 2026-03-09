@@ -15,153 +15,181 @@
     onReady(async () => {
       initSidebar();
 
-      const docStats = (await query(`
-        SELECT
-          (SELECT COUNT(*) FROM ISSUED_DOCUMENT) AS issued_count,
-          (SELECT COUNT(*) FROM UPLOADED_DOCUMENT) AS uploaded_count,
-          (SELECT COUNT(*) FROM ISSUED_DOCUMENT WHERE is_valid = 1) AS valid_issued,
-          (SELECT COUNT(*) FROM UPLOADED_DOCUMENT WHERE is_verified = 1) AS verified_uploaded
-      `))[0] || {};
+      // --- Stat Cards ---
+      try {
+        const docStats = (await query(`
+          SELECT
+            (SELECT COUNT(*) FROM ISSUED_DOCUMENT) AS issued_count,
+            (SELECT COUNT(*) FROM UPLOADED_DOCUMENT) AS uploaded_count,
+            (SELECT COUNT(*) FROM ISSUED_DOCUMENT WHERE is_valid = 1) AS valid_issued,
+            (SELECT COUNT(*) FROM UPLOADED_DOCUMENT WHERE is_verified = 1) AS verified_uploaded
+        `))[0] || {};
 
-      const kycStats = (await query(`
-        SELECT
-          (SELECT COUNT(*) FROM KYC_VERIFICATION WHERE kyc_status = 'Verified') AS verified,
-          (SELECT COUNT(*) FROM KYC_VERIFICATION WHERE kyc_status = 'Pending') AS pending,
-          (SELECT COUNT(*) FROM KYC_VERIFICATION WHERE kyc_status = 'Failed') AS failed
-      `))[0] || {};
+        const kycStats = (await query(`
+          SELECT
+            (SELECT COUNT(*) FROM KYC_VERIFICATION WHERE kyc_status = 'Verified') AS verified,
+            (SELECT COUNT(*) FROM KYC_VERIFICATION WHERE kyc_status = 'Pending') AS pending,
+            (SELECT COUNT(*) FROM KYC_VERIFICATION WHERE kyc_status = 'Failed') AS failed
+        `))[0] || {};
 
-      const pendingRequests = (await query(`SELECT COUNT(*) AS pending FROM ACCESS_REQUEST WHERE consent_status = 'Pending'`))[0] || {};
+        const pendingRequests = (await query(`SELECT COUNT(*) AS pending FROM ACCESS_REQUEST WHERE consent_status = 'Pending'`))[0] || {};
 
-      const storage = (await query(`
-        SELECT
-          SUM(storage_used_mb) AS used_mb,
-          SUM(storage_limit_mb) AS limit_mb
-        FROM DIGITAL_ACCOUNT
-      `))[0] || {};
+        document.getElementById('card-total-docs').textContent =
+          (Number(docStats.issued_count) || 0) + (Number(docStats.uploaded_count) || 0);
+        document.getElementById('card-kyc-status').innerHTML =
+          badge(kycStats.pending > 0 ? 'Pending' : 'Verified');
+        document.getElementById('card-pending-requests').textContent =
+          pendingRequests.pending || 0;
+      } catch (e) {
+        console.error('Stat cards error:', e);
+      }
 
-      const failedAuth = (await query(`
-        SELECT COUNT(*) AS failed_count
-        FROM AUTHENTICATION_LOG
-        WHERE auth_status IN ('Failed','Blocked')
-      `))[0] || {};
+      // --- Storage Card ---
+      try {
+        const storage = (await query(`
+          SELECT
+            SUM(storage_used_mb) AS used_mb,
+            SUM(storage_limit_mb) AS limit_mb
+          FROM DIGITAL_ACCOUNT
+        `))[0] || {};
 
-      document.getElementById('card-total-docs').textContent =
-        (docStats.issued_count || 0) + (docStats.uploaded_count || 0);
-      document.getElementById('card-kyc-status').innerHTML =
-        badge(kycStats.pending > 0 ? 'Pending' : 'Verified');
-      document.getElementById('card-pending-requests').textContent =
-        pendingRequests.pending || 0;
-      const used = storage.used_mb || 0;
-      const limit = storage.limit_mb || 1;
-      document.getElementById('card-storage-used').textContent =
-        used.toFixed(0) + ' MB';
-      document.getElementById('card-storage-meta').textContent =
-        'of ' + limit.toFixed(0) + ' MB pooled quota';
-      const sPct = storageUsage(used, limit);
-      document.getElementById('storage-progress-bar').style.width = sPct + '%';
+        // mysql2 returns DECIMAL as string — always parse as float
+        const used = parseFloat(storage.used_mb) || 0;
+        const limit = parseFloat(storage.limit_mb) || 1;
+        document.getElementById('card-storage-used').textContent =
+          used.toFixed(0) + ' MB';
+        document.getElementById('card-storage-meta').textContent =
+          'of ' + limit.toFixed(0) + ' MB pooled quota';
+        const sPct = storageUsage(used, limit);
+        document.getElementById('storage-progress-bar').style.width = sPct + '%';
+      } catch (e) {
+        console.error('Storage card error:', e);
+      }
 
-      const activityRows = await query(`
-        SELECT
-          'AUTH' AS kind,
-          auth_timestamp AS ts,
-          auth_method AS title,
-          auth_status AS status,
-          ip_address AS detail
-        FROM AUTHENTICATION_LOG
-        ORDER BY auth_timestamp DESC
-        LIMIT 5
-      `);
-      const accessRows = await query(`
-        SELECT
-          'ACCESS' AS kind,
-          request_timestamp AS ts,
-          CONCAT(r.org_name, ' → ', d.document_name) AS title,
-          a.consent_status AS status,
-          a.purpose AS detail
-        FROM ACCESS_REQUEST a
-        JOIN REQUESTER_ORGANIZATION r ON a.requester_id = r.requester_id
-        JOIN ISSUED_DOCUMENT d ON a.document_id = d.document_id
-        ORDER BY a.request_timestamp DESC
-        LIMIT 5
-      `);
-      const notifRows = await query(`
-        SELECT
-          'NOTIF' AS kind,
-          sent_at AS ts,
-          event_type AS title,
-          'Success' AS status,
-          message_body AS detail
-        FROM NOTIFICATION
-        WHERE event_type IN ('KYC Submitted', 'KYC Status Updated', 'Document Approved', 'Document Rejected')
-        ORDER BY sent_at DESC
-        LIMIT 5
-      `);
-      const timeline = document.getElementById('recent-activity');
-      [...activityRows, ...accessRows, ...notifRows]
-        .sort((a, b) => (a.ts > b.ts ? -1 : 1))
-        .slice(0, 6)
-        .forEach(row => {
-          const li = document.createElement('li');
-          li.className = 'timeline-item';
-          const statusBadge = badge(row.status);
-          li.innerHTML = `
-            <div class="timeline-bullet"></div>
-            <div class="timeline-title">${row.title}</div>
-            <div class="timeline-meta">
-              <span>${row.ts}</span> · <span>${row.detail || ''}</span>
-              <span style="margin-left:6px;">${statusBadge}</span>
-            </div>
-          `;
-          timeline.appendChild(li);
-        });
+      // --- Recent Activity Timeline ---
+      try {
+        const activityRows = await query(`
+          SELECT
+            'AUTH' AS kind,
+            auth_timestamp AS ts,
+            auth_method AS title,
+            auth_status AS status,
+            ip_address AS detail
+          FROM AUTHENTICATION_LOG
+          ORDER BY auth_timestamp DESC
+          LIMIT 5
+        `);
+        const accessRows = await query(`
+          SELECT
+            'ACCESS' AS kind,
+            request_timestamp AS ts,
+            CONCAT(r.org_name, ' - ', d.document_name) AS title,
+            a.consent_status AS status,
+            a.purpose AS detail
+          FROM ACCESS_REQUEST a
+          JOIN REQUESTER_ORGANIZATION r ON a.requester_id = r.requester_id
+          JOIN ISSUED_DOCUMENT d ON a.document_id = d.document_id
+          ORDER BY a.request_timestamp DESC
+          LIMIT 5
+        `);
+        const notifRows = await query(`
+          SELECT
+            'NOTIF' AS kind,
+            sent_at AS ts,
+            event_type AS title,
+            'Success' AS status,
+            message_body AS detail
+          FROM NOTIFICATION
+          WHERE event_type IN ('KYC Submitted', 'KYC Status Updated', 'Document Approved', 'Document Rejected')
+          ORDER BY sent_at DESC
+          LIMIT 5
+        `);
 
-      const authAgg = await query(`
-        SELECT
-          a.auth_status,
-          COUNT(*) AS cnt
-        FROM AUTHENTICATION_LOG a
-        GROUP BY a.auth_status
-      `);
-      const authAggMeta = document.getElementById('auth-aggregate-meta');
-      authAggMeta.textContent =
-        'Failed & blocked attempts: ' + (failedAuth.failed_count || 0);
+        const toStr = (v) => (v instanceof Date ? v.toISOString() : String(v || ''));
+        const timeline = document.getElementById('recent-activity');
+        const allRows = [...activityRows, ...accessRows, ...notifRows]
+          .sort((a, b) => (toStr(a.ts) > toStr(b.ts) ? -1 : 1))
+          .slice(0, 8);
 
-      const docTypeData = await query(`
-        SELECT document_type, COUNT(*) AS cnt
-        FROM ISSUED_DOCUMENT
-        GROUP BY document_type
-        ORDER BY cnt DESC
-      `);
+        if (allRows.length === 0) {
+          timeline.innerHTML = '<li style="color:#94A3B8;font-size:13px;padding:8px 0;">No recent activity yet.</li>';
+        } else {
+          allRows.forEach(row => {
+            const li = document.createElement('li');
+            li.className = 'timeline-item';
+            const statusBadge = badge(row.status);
+            const tsDisplay = row.ts instanceof Date ? row.ts.toLocaleString() : String(row.ts || '');
+            li.innerHTML = `
+              <div class="timeline-bullet"></div>
+              <div class="timeline-title">${row.title || ''}</div>
+              <div class="timeline-meta">
+                <span>${tsDisplay}</span> · <span>${row.detail || ''}</span>
+                <span style="margin-left:6px;">${statusBadge}</span>
+              </div>
+            `;
+            timeline.appendChild(li);
+          });
+        }
+      } catch (e) {
+        console.error('Recent activity error:', e);
+        document.getElementById('recent-activity').innerHTML =
+          '<li style="color:#EF4444;font-size:13px;padding:8px 0;">Failed to load activity.</li>';
+      }
 
-      const ctx = document.getElementById('docTypeChart').getContext('2d');
-      new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-          labels: docTypeData.map(r => r.document_type),
-          datasets: [{
-            data: docTypeData.map(r => r.cnt),
-            backgroundColor: ['#4F46E5', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6', '#06B6D4'],
-            borderWidth: 2,
-            borderColor: '#FFFFFF',
-            hoverBorderWidth: 0,
-          }],
-        },
-        options: {
-          cutout: '65%',
-          plugins: {
-            legend: {
-              position: 'bottom',
-              labels: {
-                color: '#475569',
-                font: { size: 11, family: 'Inter', weight: '500' },
-                padding: 16,
-                usePointStyle: true,
-                pointStyleWidth: 8,
+      // --- Auth Aggregate Meta ---
+      try {
+        const failedAuth = (await query(`
+          SELECT COUNT(*) AS failed_count
+          FROM AUTHENTICATION_LOG
+          WHERE auth_status IN ('Failed','Blocked')
+        `))[0] || {};
+        document.getElementById('auth-aggregate-meta').textContent =
+          'Failed & blocked attempts: ' + (failedAuth.failed_count || 0);
+      } catch (e) {
+        console.error('Auth aggregate error:', e);
+      }
+
+      // --- Document Mix Chart ---
+      try {
+        const docTypeData = await query(`
+          SELECT document_type, COUNT(*) AS cnt
+          FROM ISSUED_DOCUMENT
+          GROUP BY document_type
+          ORDER BY cnt DESC
+        `);
+
+        const ctx = document.getElementById('docTypeChart').getContext('2d');
+        new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            labels: docTypeData.map(r => r.document_type),
+            datasets: [{
+              data: docTypeData.map(r => Number(r.cnt)),
+              backgroundColor: ['#4F46E5', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6', '#06B6D4'],
+              borderWidth: 2,
+              borderColor: '#FFFFFF',
+              hoverBorderWidth: 0,
+            }],
+          },
+          options: {
+            cutout: '65%',
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: {
+                  color: '#475569',
+                  font: { size: 11, family: 'Inter', weight: '500' },
+                  padding: 16,
+                  usePointStyle: true,
+                  pointStyleWidth: 8,
+                },
               },
             },
           },
-        },
-      });
+        });
+      } catch (e) {
+        console.error('Document mix chart error:', e);
+      }
 
     });
 

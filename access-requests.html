@@ -16,9 +16,11 @@
       renderTable,
       badge,
       showToast,
+      getAccountId,
     } from './app.js';
 
     let statusFilter = 'ALL';
+    let acctId = 1;
 
     async function loadPending() {
       const rows = await query(`
@@ -99,6 +101,23 @@
             citizen_response_at = CURRENT_TIMESTAMP
         WHERE access_request_id = ?
       `, [status, id]);
+
+      const reqInfo = await query(`
+        SELECT r.org_name, d.document_name
+        FROM ACCESS_REQUEST a
+        JOIN REQUESTER_ORGANIZATION r ON a.requester_id = r.requester_id
+        JOIN ISSUED_DOCUMENT d ON a.document_id = d.document_id
+        WHERE a.access_request_id = ?
+      `, [id]);
+
+      if (reqInfo && reqInfo.length > 0) {
+        const { org_name, document_name } = reqInfo[0];
+        await exec(`
+          INSERT INTO NOTIFICATION (account_id, event_type, channel, message_body)
+          VALUES (?, CONCAT('Document ', ?), 'Portal', CONCAT('You ', LOWER(?), ' access to ', ?, ' for ', ?))
+        `, [acctId, status, status, document_name, org_name]);
+      }
+
       showToast(`Request ${status.toLowerCase()}.`, 'success');
       await loadPending();
       await loadHistory();
@@ -106,6 +125,7 @@
 
     onReady(async () => {
       initSidebar();
+      acctId = await getAccountId();
 
       document.getElementById('status-filter').addEventListener('change', (e) => {
         statusFilter = e.target.value;

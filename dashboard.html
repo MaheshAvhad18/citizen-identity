@@ -84,8 +84,20 @@
         ORDER BY a.request_timestamp DESC
         LIMIT 5
       `);
+      const notifRows = await query(`
+        SELECT
+          'NOTIF' AS kind,
+          sent_at AS ts,
+          event_type AS title,
+          'Success' AS status,
+          message_body AS detail
+        FROM NOTIFICATION
+        WHERE event_type IN ('KYC Submitted', 'KYC Status Updated', 'Document Approved', 'Document Rejected')
+        ORDER BY sent_at DESC
+        LIMIT 5
+      `);
       const timeline = document.getElementById('recent-activity');
-      [...activityRows, ...accessRows]
+      [...activityRows, ...accessRows, ...notifRows]
         .sort((a, b) => (a.ts > b.ts ? -1 : 1))
         .slice(0, 6)
         .forEach(row => {
@@ -151,6 +163,11 @@
         },
       });
 
+    });
+
+    // Sign-out listener is attached immediately — not inside onReady —
+    // so it always works even if a data query above throws an error.
+    document.addEventListener('DOMContentLoaded', () => {
       const signOut = document.getElementById('sign-out-btn');
       signOut?.addEventListener('click', async () => {
         await fetch('/api/auth/logout', { method: 'POST' });

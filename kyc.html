@@ -150,6 +150,12 @@
           (citizen_id, account_id, kyc_method, kyc_status, verified_at, verified_by, uidai_response_code, kyc_score, next_review_date, remarks)
         VALUES (?, ?, ?, 'Pending', NULL, NULL, NULL, NULL, NULL, ?)
       `, [acctId, acctId, method, remarks]);
+
+      await exec(`
+        INSERT INTO NOTIFICATION (account_id, event_type, channel, message_body)
+        VALUES (?, 'KYC Submitted', 'Portal', CONCAT('New KYC verification submitted via ', ?))
+      `, [acctId, method]);
+
       showToast('New KYC submission recorded (demo).', 'success');
       form.reset();
       await loadKycTable();
@@ -172,6 +178,12 @@
             kyc_score = COALESCE(?, kyc_score)
         WHERE kyc_id = ?
       `, [status, status, status, status, status, autoScore, kycId]);
+
+      await exec(`
+        INSERT INTO NOTIFICATION (account_id, event_type, channel, message_body)
+        VALUES (?, 'KYC Status Updated', 'Portal', CONCAT('KYC request #', ?, ' updated to ', ?))
+      `, [acctId, kycId, status]);
+
       showToast('KYC status updated.', 'success');
       await loadKycTable();
       await loadKycBanner();

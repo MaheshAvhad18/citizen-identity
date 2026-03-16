@@ -45,14 +45,36 @@ app.post('/api/auth/login', async (req, res) => {
   );
 
   const account = rows && rows[0];
+  const ipAddress = req.ip || req.connection.remoteAddress || 'Unknown';
+  const deviceInfo = req.headers['user-agent'] || 'Unknown';
+
   if (!account || !account.password_hash) {
+    // We cannot log the failure against an account if the account does not exist.
+    // However, if we want to log somewhere else, we could.
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 
+  const accountId = account.account_id;
   const ok = await bcrypt.compare(password, account.password_hash);
+
   if (!ok) {
+    // Record failed auth
+    await pool.execute(
+      `INSERT INTO AUTHENTICATION_LOG 
+       (account_id, auth_method, ip_address, device_info, location, auth_status, failure_reason)
+       VALUES (?, 'Password', ?, ?, 'Unknown', 'Failed', 'Wrong password')`,
+      [accountId, ipAddress, deviceInfo]
+    );
     return res.status(401).json({ error: 'Invalid credentials' });
   }
+
+  // Record valid auth
+  await pool.execute(
+    `INSERT INTO AUTHENTICATION_LOG 
+     (account_id, auth_method, ip_address, device_info, location, auth_status, failure_reason)
+     VALUES (?, 'Password', ?, ?, 'Unknown', 'Success', NULL)`,
+    [accountId, ipAddress, deviceInfo]
+  );
 
   req.session.user = {
     accountId: account.account_id,

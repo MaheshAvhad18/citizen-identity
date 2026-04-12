@@ -15,24 +15,13 @@
       renderTable,
       badge,
     } from './app.js';
+    import { QUERIES } from './queries.js';
 
     let methodFilter = 'ALL';
 
     async function loadLog() {
       const method = methodFilter === 'ALL' ? '%' : methodFilter;
-      const rows = await query(`
-        SELECT auth_id,
-               auth_method,
-               auth_timestamp,
-               ip_address,
-               device_info,
-               location,
-               auth_status,
-               failure_reason
-        FROM AUTHENTICATION_LOG
-        WHERE auth_method LIKE ?
-        ORDER BY auth_timestamp DESC
-      `, [method]);
+      const rows = await query(QUERIES.AUDIT_LOAD_LOG, [method]);
 
       const container = document.getElementById('auth-timeline');
       container.innerHTML = '';
@@ -57,14 +46,7 @@
     }
 
     async function loadAggregate() {
-      const perAccount = await query(`
-        SELECT account_id,
-               COUNT(*) AS failed_attempts
-        FROM AUTHENTICATION_LOG
-        WHERE auth_status IN ('Failed','Blocked')
-        GROUP BY account_id
-        ORDER BY failed_attempts DESC
-      `);
+      const perAccount = await query(QUERIES.AUDIT_LOAD_AGGREGATE);
 
       renderTable('auth-aggregate-table', [
         { key: 'account_id', label: 'Account ID' },

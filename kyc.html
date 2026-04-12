@@ -20,17 +20,12 @@
       closeModal,
       getAccountId,
     } from './app.js';
+    import { QUERIES } from './queries.js';
 
     let acctId = 1;
 
     async function loadKycBanner() {
-      const latest = (await query(`
-        SELECT *
-        FROM KYC_VERIFICATION
-        WHERE account_id = ?
-        ORDER BY COALESCE(verified_at, '9999-12-31') DESC, kyc_id DESC
-        LIMIT 1
-      `, [acctId]))[0];
+      const latest = (await query(QUERIES.KYC_BANNER_LATEST, [acctId]))[0];
 
       const banner = document.getElementById('kyc-banner');
       if (!latest) {
@@ -56,12 +51,7 @@
     }
 
     async function loadKycTable() {
-      const rows = await query(`
-        SELECT *
-        FROM KYC_VERIFICATION
-        WHERE account_id = ?
-        ORDER BY COALESCE(verified_at, '9999-12-31') DESC, kyc_id DESC
-      `, [acctId]);
+      const rows = await query(QUERIES.KYC_LOAD_TABLE, [acctId]);
 
       renderTable('kyc-table', [
         { key: 'kyc_id', label: 'ID' },
@@ -145,16 +135,9 @@
         showToast('Select a KYC method.', 'error');
         return;
       }
-      await exec(`
-        INSERT INTO KYC_VERIFICATION
-          (citizen_id, account_id, kyc_method, kyc_status, verified_at, verified_by, uidai_response_code, kyc_score, next_review_date, remarks)
-        VALUES (?, ?, ?, 'Pending', NULL, NULL, NULL, NULL, NULL, ?)
-      `, [acctId, acctId, method, remarks]);
+      await exec(QUERIES.KYC_INSERT_NEW, [acctId, acctId, method, remarks]);
 
-      await exec(`
-        INSERT INTO NOTIFICATION (account_id, event_type, channel, message_body)
-        VALUES (?, 'KYC Submitted', 'Portal', CONCAT('New KYC verification submitted via ', ?))
-      `, [acctId, method]);
+      await exec(QUERIES.KYC_INSERT_NOTIF, [acctId, method]);
 
       showToast('New KYC submission recorded (demo).', 'success');
       form.reset();
@@ -169,20 +152,9 @@
       const kycId = parseInt(form.kyc_id.value, 10);
       const status = form.kyc_status.value;
       const autoScore = status === 'Verified' ? 90 : status === 'Failed' ? 40 : null;
-      await exec(`
-        UPDATE KYC_VERIFICATION
-        SET kyc_status = ?,
-            verified_at = CASE WHEN ? IN ('Verified','Failed') THEN CURRENT_TIMESTAMP ELSE verified_at END,
-            verified_by = CASE WHEN ? IN ('Verified','Failed') THEN 'Demo KYC Officer' ELSE verified_by END,
-            uidai_response_code = CASE WHEN ? = 'Verified' THEN 'UIDAI-200' WHEN ? = 'Failed' THEN 'UIDAI-403' ELSE uidai_response_code END,
-            kyc_score = COALESCE(?, kyc_score)
-        WHERE kyc_id = ?
-      `, [status, status, status, status, status, autoScore, kycId]);
+      await exec(QUERIES.KYC_UPDATE_STATUS, [status, status, status, status, status, autoScore, kycId]);
 
-      await exec(`
-        INSERT INTO NOTIFICATION (account_id, event_type, channel, message_body)
-        VALUES (?, 'KYC Status Updated', 'Portal', CONCAT('KYC request #', ?, ' updated to ', ?))
-      `, [acctId, kycId, status]);
+      await exec(QUERIES.KYC_UPDATE_NOTIF, [acctId, kycId, status]);
 
       showToast('KYC status updated.', 'success');
       await loadKycTable();

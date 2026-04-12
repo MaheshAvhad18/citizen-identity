@@ -15,24 +15,13 @@
       exec,
       showToast,
     } from './app.js';
+    import { QUERIES } from './queries.js';
 
     let channelFilter = 'ALL';
 
     async function loadNotifications() {
       const filter = channelFilter === 'ALL' ? '%' : channelFilter;
-      const rows = await query(`
-        SELECT notification_id,
-               event_type,
-               channel,
-               message_body,
-               sent_at,
-               delivery_status,
-               retry_count,
-               is_read
-        FROM NOTIFICATION
-        WHERE channel LIKE ?
-        ORDER BY sent_at DESC
-      `, [filter]);
+      const rows = await query(QUERIES.NOTIF_LOAD_ALL, [filter]);
 
       const list = document.getElementById('notification-list');
       list.innerHTML = '';
@@ -65,18 +54,14 @@
     }
 
     async function markRead(id) {
-      await exec(`
-        UPDATE NOTIFICATION
-        SET is_read = 1
-        WHERE notification_id = ?
-      `, [id]);
+      await exec(QUERIES.NOTIF_MARK_READ, [id]);
       showToast('Notification marked as read.', 'success');
       await loadNotifications();
     }
 
     async function deleteNotification(id) {
       if (!confirm('Delete this notification from your inbox?')) return;
-      await exec(`DELETE FROM NOTIFICATION WHERE notification_id = ?`, [id]);
+      await exec(QUERIES.NOTIF_DELETE, [id]);
       showToast('Notification deleted.', 'success');
       await loadNotifications();
     }

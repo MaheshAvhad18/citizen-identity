@@ -20,22 +20,10 @@
       closeModal,
       getAccountId,
     } from './app.js';
+    import { QUERIES } from './queries.js';
 
     async function loadEsignTable() {
-      const rows = await query(`
-        SELECT e.esign_id,
-               d.document_name,
-               e.signed_at,
-               e.aadhaar_verified,
-               e.is_valid,
-               e.revoked_at,
-               e.certificate_url,
-               e.signature_hash,
-               e.signing_authority
-        FROM E_SIGN_RECORD e
-        JOIN ISSUED_DOCUMENT d ON e.document_id = d.document_id
-        ORDER BY e.signed_at DESC
-      `);
+      const rows = await query(QUERIES.ESIGN_LOAD_TABLE);
 
       renderTable('esign-table', [
         { key: 'document_name', label: 'Document' },
@@ -69,15 +57,7 @@
     }
 
     async function loadUnsignedDocuments() {
-      const docs = await query(`
-        SELECT d.document_id, d.document_name
-        FROM ISSUED_DOCUMENT d
-        WHERE NOT EXISTS (
-          SELECT 1 FROM E_SIGN_RECORD e
-          WHERE e.document_id = d.document_id
-        )
-        ORDER BY d.document_name
-      `);
+      const docs = await query(QUERIES.ESIGN_LOAD_UNSIGNED);
       const select = document.getElementById('esign_document_id');
       select.innerHTML = '<option value="">Select issued document</option>';
       docs.forEach(d => {
@@ -131,12 +111,7 @@
         return;
       }
       if (!confirm('Revoke this e-signature?')) return;
-      await exec(`
-        UPDATE E_SIGN_RECORD
-        SET is_valid = 0,
-            revoked_at = CURRENT_TIMESTAMP
-        WHERE esign_id = ?
-      `, [row.esign_id]);
+      await exec(QUERIES.ESIGN_REVOKE, [row.esign_id]);
       showToast('e-Signature revoked.', 'success');
       await loadEsignTable();
     }
@@ -151,11 +126,7 @@
         return;
       }
       const acctId = await getAccountId();
-      await exec(`
-        INSERT INTO E_SIGN_RECORD
-          (account_id, document_id, aadhaar_verified, signature_hash, signing_authority, certificate_url, is_valid)
-        VALUES (?, ?, 1, 'demo_signature_hash', ?, 'https://esign.gov.in/demo-cert', 1)
-      `, [acctId, documentId, authority]);
+      await exec(QUERIES.ESIGN_INSERT_RECORD, [acctId, documentId, authority]);
       showToast('Document e-signed (demo).', 'success');
       closeModal('esign-sign-modal');
       form.reset();

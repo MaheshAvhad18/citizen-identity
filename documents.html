@@ -20,6 +20,7 @@
       closeModal,
       getAccountId,
     } from './app.js';
+    import { QUERIES } from './queries.js';
 
     let acctId = 1;
 
@@ -28,18 +29,7 @@
 
     async function loadIssued() {
       const filter = currentIssuedType === 'ALL' ? '%' : currentIssuedType;
-      const rows = await query(`
-        SELECT d.document_id,
-               d.document_name,
-               d.document_type,
-               i.issuer_name,
-               d.issue_date,
-               d.is_valid
-        FROM ISSUED_DOCUMENT d
-        JOIN ISSUER_ORGANIZATION i ON d.issuer_id = i.issuer_id
-        WHERE d.document_type LIKE ?
-        ORDER BY d.issue_date DESC
-      `, [filter]);
+      const rows = await query(QUERIES.DOCS_LOAD_ISSUED, [filter]);
 
       renderTable('issued-table', [
         { key: 'document_name', label: 'Name' },
@@ -65,17 +55,7 @@
 
     async function loadUploaded() {
       const term = `%${currentUploadedSearch}%`;
-      const rows = await query(`
-        SELECT upload_id,
-               file_name,
-               file_type,
-               file_size_kb,
-               upload_timestamp,
-               is_verified
-        FROM UPLOADED_DOCUMENT
-        WHERE file_name LIKE ?
-        ORDER BY upload_timestamp DESC
-      `, [term]);
+      const rows = await query(QUERIES.DOCS_LOAD_UPLOADED, [term]);
 
       renderTable('uploaded-table', [
         { key: 'file_name', label: 'File Name' },
@@ -169,7 +149,7 @@
 
     async function deleteUploaded(uploadId) {
       if (!confirm('Delete this uploaded document from your locker?')) return;
-      await exec(`DELETE FROM UPLOADED_DOCUMENT WHERE upload_id = ?`, [uploadId]);
+      await exec(QUERIES.DOCS_DELETE_UPLOADED, [uploadId]);
       showToast('Document deleted.', 'success');
       await loadUploaded();
     }
@@ -186,11 +166,7 @@
         return;
       }
       const storagePath = `/user/${acctId}/uploads/${name}`;
-      await exec(`
-        INSERT INTO UPLOADED_DOCUMENT
-          (account_id, file_name, file_type, file_size_kb, description, sha256_checksum, storage_path)
-        VALUES (?, ?, ?, ?, ?, 'demo_checksum', ?)
-      `, [acctId, name, type, Number.isFinite(size) ? size : 0, desc, storagePath]);
+      await exec(QUERIES.DOCS_INSERT_UPLOADED, [acctId, name, type, Number.isFinite(size) ? size : 0, desc, storagePath]);
       showToast('Uploaded document added (demo).', 'success');
       closeModal('upload-modal');
       form.reset();

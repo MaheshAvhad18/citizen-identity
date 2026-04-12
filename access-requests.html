@@ -18,25 +18,13 @@
       showToast,
       getAccountId,
     } from './app.js';
+    import { QUERIES } from './queries.js';
 
     let statusFilter = 'ALL';
     let acctId = 1;
 
     async function loadPending() {
-      const rows = await query(`
-        SELECT a.access_request_id,
-               r.org_name,
-               d.document_name,
-               a.purpose,
-               a.request_timestamp,
-               a.expiry_timestamp,
-               a.consent_status
-        FROM ACCESS_REQUEST a
-        JOIN REQUESTER_ORGANIZATION r ON a.requester_id = r.requester_id
-        JOIN ISSUED_DOCUMENT d ON a.document_id = d.document_id
-        WHERE a.consent_status = 'Pending'
-        ORDER BY a.request_timestamp DESC
-      `);
+      const rows = await query(QUERIES.ACCESS_LOAD_PENDING);
 
       renderTable('pending-table', [
         { key: 'org_name', label: 'Requester' },
@@ -64,21 +52,7 @@
 
     async function loadHistory() {
       const filter = statusFilter === 'ALL' ? '%' : statusFilter;
-      const rows = await query(`
-        SELECT a.access_request_id,
-               r.org_name,
-               d.document_name,
-               a.purpose,
-               a.request_timestamp,
-               a.expiry_timestamp,
-               a.consent_status,
-               a.citizen_response_at
-        FROM ACCESS_REQUEST a
-        JOIN REQUESTER_ORGANIZATION r ON a.requester_id = r.requester_id
-        JOIN ISSUED_DOCUMENT d ON a.document_id = d.document_id
-        WHERE a.consent_status LIKE ?
-        ORDER BY a.request_timestamp DESC
-      `, [filter]);
+      const rows = await query(QUERIES.ACCESS_LOAD_HISTORY, [filter]);
 
       renderTable('history-table', [
         { key: 'org_name', label: 'Requester' },
@@ -95,27 +69,13 @@
     }
 
     async function updateConsent(id, status) {
-      await exec(`
-        UPDATE ACCESS_REQUEST
-        SET consent_status = ?,
-            citizen_response_at = CURRENT_TIMESTAMP
-        WHERE access_request_id = ?
-      `, [status, id]);
+      await exec(QUERIES.ACCESS_UPDATE_CONSENT, [status, id]);
 
-      const reqInfo = await query(`
-        SELECT r.org_name, d.document_name
-        FROM ACCESS_REQUEST a
-        JOIN REQUESTER_ORGANIZATION r ON a.requester_id = r.requester_id
-        JOIN ISSUED_DOCUMENT d ON a.document_id = d.document_id
-        WHERE a.access_request_id = ?
-      `, [id]);
+      const reqInfo = await query(QUERIES.ACCESS_GET_REQ_INFO, [id]);
 
       if (reqInfo && reqInfo.length > 0) {
         const { org_name, document_name } = reqInfo[0];
-        await exec(`
-          INSERT INTO NOTIFICATION (account_id, event_type, channel, message_body)
-          VALUES (?, CONCAT('Document ', ?), 'Portal', CONCAT('You ', LOWER(?), ' access to ', ?, ' for ', ?))
-        `, [acctId, status, status, document_name, org_name]);
+        await exec(QUERIES.ACCESS_INSERT_NOTIF, [acctId, status, status, document_name, org_name]);
       }
 
       showToast(`Request ${status.toLowerCase()}.`, 'success');

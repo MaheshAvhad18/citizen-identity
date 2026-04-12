@@ -19,19 +19,10 @@
       openModal,
       closeModal,
     } from './app.js';
+    import { QUERIES } from './queries.js';
 
     async function loadIssuers() {
-      const rows = await query(`
-        SELECT issuer_id,
-               issuer_name,
-               issuer_code,
-               issuer_type,
-               state,
-               is_active,
-               registered_date
-        FROM ISSUER_ORGANIZATION
-        ORDER BY issuer_name
-      `);
+      const rows = await query(QUERIES.ADMIN_LOAD_ISSUERS);
 
       renderTable('issuer-table', [
         { key: 'issuer_name', label: 'Issuer' },
@@ -47,17 +38,7 @@
     }
 
     async function loadRequesters() {
-      const rows = await query(`
-        SELECT requester_id,
-               org_name,
-               org_type,
-               registration_number,
-               contact_email,
-               is_approved,
-               approved_date
-        FROM REQUESTER_ORGANIZATION
-        ORDER BY org_name
-      `);
+      const rows = await query(QUERIES.ADMIN_LOAD_REQUESTERS);
 
       renderTable('requester-table', [
         { key: 'org_name', label: 'Organization' },
@@ -83,20 +64,7 @@
     }
 
     async function loadShareLogs() {
-      const rows = await query(`
-        SELECT s.share_id,
-               d.document_name,
-               r.org_name,
-               s.share_timestamp,
-               s.share_method,
-               s.share_expiry,
-               s.is_revoked,
-               s.access_count
-        FROM DOCUMENT_SHARE_LOG s
-        JOIN ISSUED_DOCUMENT d ON s.document_id = d.document_id
-        JOIN REQUESTER_ORGANIZATION r ON s.requester_id = r.requester_id
-        ORDER BY s.share_timestamp DESC
-      `);
+      const rows = await query(QUERIES.ADMIN_LOAD_SHARE_LOGS);
 
       renderTable('share-table', [
         { key: 'document_name', label: 'Document' },
@@ -114,12 +82,7 @@
     }
 
     async function approveRequester(id) {
-      await exec(`
-        UPDATE REQUESTER_ORGANIZATION
-        SET is_approved = 1,
-            approved_date = CURDATE()
-        WHERE requester_id = ?
-      `, [id]);
+      await exec(QUERIES.ADMIN_APPROVE_REQUESTER, [id]);
       showToast('Requester organization approved.', 'success');
       await loadRequesters();
     }
@@ -136,11 +99,7 @@
         showToast('Name and type are required.', 'error');
         return;
       }
-      await exec(`
-        INSERT INTO REQUESTER_ORGANIZATION
-          (org_name, org_type, registration_number, contact_email, api_key_hash, is_approved, website_url)
-        VALUES (?, ?, ?, ?, 'demo_api_key', 0, ?)
-      `, [name, type, reg, email, website]);
+      await exec(QUERIES.ADMIN_INSERT_ORG, [name, type, reg, email, website]);
       showToast('Requester organization created (demo).', 'success');
       form.reset();
       closeModal('new-org-modal');

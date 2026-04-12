@@ -11,28 +11,18 @@
   <script type="module" src="db.js"></script>
   <script type="module">
     import { onReady, initSidebar, query, badge, storageUsage } from './app.js';
+    import { QUERIES } from './queries.js';
 
     onReady(async () => {
       initSidebar();
 
       // --- Stat Cards ---
       try {
-        const docStats = (await query(`
-          SELECT
-            (SELECT COUNT(*) FROM ISSUED_DOCUMENT) AS issued_count,
-            (SELECT COUNT(*) FROM UPLOADED_DOCUMENT) AS uploaded_count,
-            (SELECT COUNT(*) FROM ISSUED_DOCUMENT WHERE is_valid = 1) AS valid_issued,
-            (SELECT COUNT(*) FROM UPLOADED_DOCUMENT WHERE is_verified = 1) AS verified_uploaded
-        `))[0] || {};
+        const docStats = (await query(QUERIES.DASHBOARD_DOC_STATS))[0] || {};
 
-        const kycStats = (await query(`
-          SELECT
-            (SELECT COUNT(*) FROM KYC_VERIFICATION WHERE kyc_status = 'Verified') AS verified,
-            (SELECT COUNT(*) FROM KYC_VERIFICATION WHERE kyc_status = 'Pending') AS pending,
-            (SELECT COUNT(*) FROM KYC_VERIFICATION WHERE kyc_status = 'Failed') AS failed
-        `))[0] || {};
+        const kycStats = (await query(QUERIES.DASHBOARD_KYC_STATS))[0] || {};
 
-        const pendingRequests = (await query(`SELECT COUNT(*) AS pending FROM ACCESS_REQUEST WHERE consent_status = 'Pending'`))[0] || {};
+        const pendingRequests = (await query(QUERIES.DASHBOARD_PENDING_REQUESTS))[0] || {};
 
         document.getElementById('card-total-docs').textContent =
           (Number(docStats.issued_count) || 0) + (Number(docStats.uploaded_count) || 0);
@@ -46,12 +36,7 @@
 
       // --- Storage Card ---
       try {
-        const storage = (await query(`
-          SELECT
-            SUM(storage_used_mb) AS used_mb,
-            SUM(storage_limit_mb) AS limit_mb
-          FROM DIGITAL_ACCOUNT
-        `))[0] || {};
+        const storage = (await query(QUERIES.DASHBOARD_STORAGE))[0] || {};
 
         // mysql2 returns DECIMAL as string — always parse as float
         const used = parseFloat(storage.used_mb) || 0;
@@ -68,42 +53,9 @@
 
       // --- Recent Activity Timeline ---
       try {
-        const activityRows = await query(`
-          SELECT
-            'AUTH' AS kind,
-            auth_timestamp AS ts,
-            auth_method AS title,
-            auth_status AS status,
-            ip_address AS detail
-          FROM AUTHENTICATION_LOG
-          ORDER BY auth_timestamp DESC
-          LIMIT 5
-        `);
-        const accessRows = await query(`
-          SELECT
-            'ACCESS' AS kind,
-            request_timestamp AS ts,
-            CONCAT(r.org_name, ' - ', d.document_name) AS title,
-            a.consent_status AS status,
-            a.purpose AS detail
-          FROM ACCESS_REQUEST a
-          JOIN REQUESTER_ORGANIZATION r ON a.requester_id = r.requester_id
-          JOIN ISSUED_DOCUMENT d ON a.document_id = d.document_id
-          ORDER BY a.request_timestamp DESC
-          LIMIT 5
-        `);
-        const notifRows = await query(`
-          SELECT
-            'NOTIF' AS kind,
-            sent_at AS ts,
-            event_type AS title,
-            'Success' AS status,
-            message_body AS detail
-          FROM NOTIFICATION
-          WHERE event_type IN ('KYC Submitted', 'KYC Status Updated', 'Document Approved', 'Document Rejected')
-          ORDER BY sent_at DESC
-          LIMIT 5
-        `);
+        const activityRows = await query(QUERIES.DASHBOARD_ACTIVITY_AUTH);
+        const accessRows = await query(QUERIES.DASHBOARD_ACTIVITY_ACCESS);
+        const notifRows = await query(QUERIES.DASHBOARD_ACTIVITY_NOTIF);
 
         const toStr = (v) => (v instanceof Date ? v.toISOString() : String(v || ''));
         const timeline = document.getElementById('recent-activity');
@@ -138,11 +90,7 @@
 
       // --- Auth Aggregate Meta ---
       try {
-        const failedAuth = (await query(`
-          SELECT COUNT(*) AS failed_count
-          FROM AUTHENTICATION_LOG
-          WHERE auth_status IN ('Failed','Blocked')
-        `))[0] || {};
+        const failedAuth = (await query(QUERIES.DASHBOARD_FAILED_AUTH))[0] || {};
         document.getElementById('auth-aggregate-meta').textContent =
           'Failed & blocked attempts: ' + (failedAuth.failed_count || 0);
       } catch (e) {
@@ -151,12 +99,7 @@
 
       // --- Document Mix Chart ---
       try {
-        const docTypeData = await query(`
-          SELECT document_type, COUNT(*) AS cnt
-          FROM ISSUED_DOCUMENT
-          GROUP BY document_type
-          ORDER BY cnt DESC
-        `);
+        const docTypeData = await query(QUERIES.DASHBOARD_DOC_MIX);
 
         const ctx = document.getElementById('docTypeChart').getContext('2d');
         new Chart(ctx, {
